@@ -22,7 +22,7 @@
 #include <strings.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <pthread.h>
+//#include <pthread.h>
 #include <sys/wait.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -54,7 +54,8 @@ void unimplemented(int);
 /**********************************************************************/
 void accept_request(void *arg)
 {
-    int client = (intptr_t)arg;
+    int client = *((int*)arg);
+    printf("accept_request, fd: %d\n", client);
     char buf[1024];
     size_t numchars;
     char method[255];
@@ -95,6 +96,8 @@ void accept_request(void *arg)
     }
     url[i] = '\0';
 
+    printf("%s\n", url);
+
     if (strcasecmp(method, "GET") == 0)
     {
         query_string = url;
@@ -125,9 +128,16 @@ void accept_request(void *arg)
                 (st.st_mode & S_IXOTH)    )
             cgi = 1;
         if (!cgi)
+        {
+            printf("run serve_file\n");
             serve_file(client, path);
+        }
         else
+        {
+            printf("run execute_cgi\n");
             execute_cgi(client, path, method, query_string);
+        
+        }
     }
 
     close(client);
@@ -243,6 +253,7 @@ void execute_cgi(int client, const char *path,
     {
     }
 
+    printf("buf = %s\n", buf);
 
     if (pipe(cgi_output) < 0) {
         cannot_execute(client);
@@ -259,8 +270,11 @@ void execute_cgi(int client, const char *path,
     }
     sprintf(buf, "HTTP/1.0 200 OK\r\n");
     send(client, buf, strlen(buf), 0);
+    printf("buf = %s\n", buf);
+
     if (pid == 0)  /* child: CGI script */
     {
+        printf("child process, pid=%d, path=%s\n", getpid(), path);
         char meth_env[255];
         char query_env[255];
         char length_env[255];
@@ -282,6 +296,7 @@ void execute_cgi(int client, const char *path,
         execl(path, NULL);
         exit(0);
     } else {    /* parent */
+        printf("parent process, pid = %d\n", getpid());
         close(cgi_output[1]);
         close(cgi_input[0]);
         if (strcasecmp(method, "POST") == 0)
@@ -290,12 +305,17 @@ void execute_cgi(int client, const char *path,
                 write(cgi_input[1], &c, 1);
             }
         while (read(cgi_output[0], &c, 1) > 0)
+        {
+            printf("%c\n", c);
             send(client, &c, 1, 0);
+        }
 
         close(cgi_output[0]);
         close(cgi_input[1]);
         waitpid(pid, &status, 0);
     }
+
+    printf("finish cgi\n");
 }
 
 /**********************************************************************/
@@ -439,6 +459,7 @@ int startup(u_short *port)
     name.sin_family = AF_INET;
     name.sin_port = htons(*port);
     name.sin_addr.s_addr = htonl(INADDR_ANY);
+    // inet_pton(AF_INET, "172.24.34.204", &name.sin_addr.s_addr);
     if ((setsockopt(httpd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on))) < 0)  
     {  
         error_die("setsockopt failed");
@@ -489,11 +510,11 @@ void unimplemented(int client)
 int main(void)
 {
     int server_sock = -1;
-    u_short port = 4000;
+    u_short port = 10000;
     int client_sock = -1;
     struct sockaddr_in client_name;
     socklen_t  client_name_len = sizeof(client_name);
-    pthread_t newthread;
+    //pthread_t newthread;
 
     server_sock = startup(&port);
     printf("httpd running on port %d\n", port);
@@ -505,9 +526,9 @@ int main(void)
                 &client_name_len);
         if (client_sock == -1)
             error_die("accept");
-        /* accept_request(&client_sock); */
-        if (pthread_create(&newthread , NULL, (void *)accept_request, (void *)(intptr_t)client_sock) != 0)
-            perror("pthread_create");
+        accept_request(&client_sock);
+        //if (pthread_create(&newthread , NULL, (void *)accept_request, (void *)(intptr_t)client_sock) != 0)
+        //    perror("pthread_create");
     }
 
     close(server_sock);
