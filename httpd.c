@@ -127,7 +127,7 @@ void accept_request(void *arg)
                 (st.st_mode & S_IXGRP) ||
                 (st.st_mode & S_IXOTH)    )
             cgi = 1;
-        if (!cgi)
+        if (!cgi || strstr(path, "index.html"))
         {
             printf("run serve_file\n");
             serve_file(client, path);
@@ -229,6 +229,7 @@ void execute_cgi(int client, const char *path,
     char c;
     int numchars = 1;
     int content_length = -1;
+    int ret = -1;
 
     buf[0] = 'A'; buf[1] = '\0';
     if (strcasecmp(method, "GET") == 0)
@@ -293,7 +294,11 @@ void execute_cgi(int client, const char *path,
             sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
             putenv(length_env);
         }
-        execl(path, path, NULL);
+        ret = execl(path, path, NULL);
+        if(ret == -1)
+        {
+            perror("execl");
+        }
         exit(0);
     } else {    /* parent */
         printf("parent process, pid = %d\n", getpid());
